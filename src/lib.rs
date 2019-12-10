@@ -504,7 +504,7 @@ where
         D: Deserializer<'de>,
     {
         deserializer.deserialize_tuple(N, ArrayVisitor::<[T; {N}]>::new())
-            .map(|a|Vector(a))
+            .map(Vector)
     }
 }
 
@@ -1196,7 +1196,7 @@ where
         D: Deserializer<'de>,
     {
         deserializer.deserialize_tuple(N, ArrayVisitor::<[T; {N}]>::new())
-            .map(|a|Point(a))
+            .map(Point)
     }
 }
 
@@ -1693,7 +1693,7 @@ where
     {
         deserializer.deserialize_tuple(
             N, ArrayVisitor::<[Vector<T, {N}>; {M}]>::new()
-        ).map(|a|Matrix(a))
+        ).map(Matrix)
     }
 }
 
