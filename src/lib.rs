@@ -52,6 +52,11 @@ use std::{
     },
 };
 
+use num_traits::{
+    Float,
+    NumCast
+};
+
 #[cfg(feature = "serde")]
 use std::marker::PhantomData;
 
@@ -174,39 +179,6 @@ impl_one!{ u32 }
 impl_one!{ u64 }
 impl_one!{ u128 }
 impl_one!{ usize }
-
-/// Values that are [Real numbers](https://en.wikipedia.org/wiki/Real_number#Axiomatic_approach).
-pub trait Real
-where
-    Self: Sized,
-    Self: Add<Output = Self>,
-    Self: Sub<Output = Self>,
-    Self: Mul<Output = Self>,
-    Self: Div<Output = Self>,
-    Self: Neg<Output = Self>,
-{
-    fn sqrt(self) -> Self;
-
-    fn mul2(self) -> Self;
-
-    fn div2(self) -> Self;
-}
-
-impl Real for f32 {
-    fn sqrt(self) -> Self { self.sqrt() }
-
-    fn mul2(self) -> Self { 2.0 * self }
-
-    fn div2(self) -> Self { self / 2.0 }
-}
-
-impl Real for f64 {
-    fn sqrt(self) -> Self { self.sqrt() }
-
-    fn mul2(self) -> Self { 2.0 * self }
-
-    fn div2(self) -> Self { self / 2.0 }
-}
 
 /// `N`-element vector.
 ///
@@ -1323,7 +1295,7 @@ pub trait MetricSpace: Sized {
 /// A metric spaced where the metric is a real number.
 pub trait RealMetricSpace: MetricSpace
 where
-    Self::Metric: Real,
+    Self::Metric: Float,
 {
     /// Returns the distance between the two values.
     fn distance(self, other: Self) -> Self::Metric {
@@ -1334,7 +1306,7 @@ where
 impl<T> RealMetricSpace for T
 where
     T: MetricSpace,
-    <T as MetricSpace>::Metric: Real
+    <T as MetricSpace>::Metric: Float
 {}
 
 impl<T, const N: usize> MetricSpace for Vector<T, {N}>
@@ -1378,7 +1350,7 @@ pub trait RealInnerSpace: InnerSpace
 where
     Self: Clone,
     Self: MetricSpace<Metric = <Self as VectorSpace>::Scalar>,
-    <Self as VectorSpace>::Scalar: Real,
+    <Self as VectorSpace>::Scalar: Float,
 {
     /// Returns the length of the vector.
     fn magnitude(self) -> Self::Scalar {
@@ -1409,7 +1381,7 @@ where
 impl<T> RealInnerSpace for T
 where
     T: InnerSpace,
-    <T as VectorSpace>::Scalar: Real
+    <T as VectorSpace>::Scalar: Float
 {}
 
 impl<T, const N: usize> InnerSpace for Vector<T, {N}>
@@ -2212,48 +2184,6 @@ where
     }
 }
 
-/// A value for which the usual set of trigonometric functions are defined.
-pub trait Angle: Real {
-    /// Returns the sine of the angle.
-    fn sin(self) -> Self;
-
-    /// Returns the cosine of the angle.
-    fn cos(self) -> Self;
-
-    /// Returns the tangent of the angle.
-    fn tan(self) -> Self;
-
-    /// Returns the four quadrant arctangent of `self` and `x` in radians.
-    fn atan2(self, x: Self) -> Self;
-
-    /// Returns the sine and the cosine of the angle.
-    fn sin_cos(self) -> (Self, Self);
-}
-
-impl Angle for f32 {
-    fn sin(self) -> Self { self.sin() }
-
-    fn cos(self) -> Self { self.cos() }
-
-    fn tan(self) -> Self { self.tan() }
-
-    fn atan2(self, x: Self) -> Self { self.atan2(x) }
-
-    fn sin_cos(self) -> (Self, Self) { (self.sin(), self.cos()) }
-}
-
-impl Angle for f64 {
-    fn sin(self) -> Self { self.sin() }
-
-    fn cos(self) -> Self { self.cos() }
-
-    fn tan(self) -> Self { self.tan() }
-
-    fn atan2(self, x: Self) -> Self { self.atan2(x) }
-
-    fn sin_cos(self) -> (Self, Self) { (self.sin(), self.cos()) }
-}
-
 /// A representation of a rotation in three dimensional space. Each component is
 /// the rotation around its respective axis in radians.
 #[repr(C)]
@@ -2270,7 +2200,7 @@ pub struct Orthonormal<T, const DIM: usize>(Matrix<T, {DIM}, {DIM}>);
 
 impl<T> From<T> for Orthonormal<T, 2>
 where
-    T: Angle + Clone,
+    T: Float + Clone,
 {
     fn from(angle: T) -> Self {
         let (s, c) = angle.sin_cos();
@@ -2280,7 +2210,7 @@ where
 
 impl<T> From<Euler<T>> for Orthonormal<T, 3>
 where
-    T: Angle + Copy + Clone,
+    T: Float + Copy + Clone,
 {
     fn from(Euler{ x, y, z }: Euler<T>) -> Self {
         let (
@@ -2346,13 +2276,13 @@ pub struct Quaternion<T> {
 
 impl<T> From<Euler<T>> for Quaternion<T>
 where
-    T: Angle + Clone,
+    T: Float + Clone,
 {
     fn from(euler: Euler<T>) -> Quaternion<T> {
         let Euler { x, y, z } = euler;
-        let (xs, xc) = x.div2().sin_cos();
-        let (ys, yc) = y.div2().sin_cos();
-        let (zs, zc) = z.div2().sin_cos();
+        let (xs, xc) = half(x).sin_cos();
+        let (ys, yc) = half(y).sin_cos();
+        let (zs, zc) = half(z).sin_cos();
 
         Quaternion::new(
             -xs.clone() * ys.clone() * zs.clone() + xc.clone() * yc.clone() * zc.clone(),
@@ -2384,7 +2314,7 @@ where
 
 impl<T> Mul<T> for Quaternion<T>
 where
-    T: Real + Clone,
+    T: Float + Clone,
 {
     type Output = Quaternion<T>;
 
@@ -2401,7 +2331,7 @@ where
 
 impl<T> Div<T> for Quaternion<T>
 where
-    T: Real + Clone,
+    T: Float + Clone,
 {
     type Output = Quaternion<T>;
 
@@ -2418,7 +2348,7 @@ where
 
 impl<T> MulAssign<T> for Quaternion<T>
 where
-    T: Real + Clone,
+    T: Float + Clone,
 {
     fn mul_assign(&mut self, scalar: T) {
         self.s = self.s() * scalar.clone();
@@ -2430,7 +2360,7 @@ where
 
 impl<T> DivAssign<T> for Quaternion<T>
 where
-    T: Real + Clone,
+    T: Float + Clone,
 {
     fn div_assign(&mut self, scalar: T) {
         self.s = self.s() / scalar.clone();
@@ -2442,7 +2372,7 @@ where
 
 impl<T> Mul<Quaternion<T>> for Quaternion<T>
 where
-    T: Real + Clone,
+    T: Float + Clone,
 {
     type Output = Quaternion<T>;
 
@@ -2457,9 +2387,21 @@ where
     }
 }
 
+fn twice<T>(t: T) -> T where
+    T: Float,
+{
+    t * NumCast::from(2).unwrap()
+}
+
+fn half<T>(t: T) -> T where
+    T: Float,
+{
+    t / NumCast::from(2).unwrap()
+}
+
 impl<T> Mul<Vector3<T>> for Quaternion<T>
 where
-    T: Real + Clone,
+    T: Float + Clone,
 {
     type Output = Vector3<T>;
 
@@ -2467,13 +2409,13 @@ where
         let s = self.s();
         self.v.clone()
             .cross(self.v.clone().cross(rhs.clone()) + (rhs.clone() * s))
-            .map(Real::mul2) + rhs
+            .map(twice) + rhs
     }
 }
 
 impl<T> Rotation<3> for Quaternion<T>
 where
-    T: Real + Clone,
+    T: Float + Clone,
 {
     type Scalar = T;
 
