@@ -54,7 +54,11 @@ use std::{
 
 use num_traits::{
     Float,
-    NumCast
+    NumCast,
+    identities::{
+        One,
+        Zero,
+    },
 };
 
 #[cfg(feature = "serde")]
@@ -79,106 +83,6 @@ use serde::{
         Visitor,
     },
 };
-
-/// Defines the additive identity for `Self`.
-pub trait Zero {
-    /// Returns the additive identity of `Self`.
-    fn zero() -> Self;
-
-    /// Returns true if the value is the additive identity.
-    fn is_zero(&self) -> bool;
-}
-
-macro_rules! impl_zero {
-    // Default $zero to '0' if not provided.
-    (
-        $type:ty
-    ) => {
-        impl_zero!{ $type, 0 }
-    };
-    // Main impl.
-    (
-        $type:ty,
-        $zero:expr
-    ) => {
-        impl Zero for $type {
-            fn zero() -> Self  {
-                $zero
-            }
-
-            fn is_zero(&self) -> bool {
-                *self == $zero
-            }
-        }
-    };
-}
-
-impl_zero!{ bool, false }
-impl_zero!{ f32, 0.0 }
-impl_zero!{ f64, 0.0 }
-impl_zero!{ i8 }
-impl_zero!{ i16 }
-impl_zero!{ i32 }
-impl_zero!{ i64 }
-impl_zero!{ i128 }
-impl_zero!{ isize }
-impl_zero!{ u8 }
-impl_zero!{ u16 }
-impl_zero!{ u32 }
-impl_zero!{ u64 }
-impl_zero!{ u128 }
-impl_zero!{ usize }
-
-/// Defines the multiplicative identity element for `Self`.
-///
-/// For Matrices, `one` is an alias for the unit matrix.
-pub trait One {
-    /// Returns the multiplicative identity for `Self`.
-    fn one() -> Self;
-
-    /// Returns true if the value is the multiplicative identity.
-    fn is_one(&self) -> bool;
-}
-
-macro_rules! impl_one {
-    // Default $one to '1' if not provided.
-    (
-        $type:ty
-    ) => {
-        impl_one!{ $type, 1 }
-    };
-    // Main impl.
-    (
-        $type:ty,
-        $one:expr
-    ) => {
-        impl One for $type {
-            fn one() -> Self  {
-                $one
-            }
-
-            fn is_one(&self) -> bool {
-                *self == $one
-            }
-        }
-    };
-}
-
-impl_one!{ bool, true }
-impl_one!{ f32, 1.0 }
-impl_one!{ f64, 1.0 }
-impl_one!{ i8 }
-impl_one!{ i16 }
-impl_one!{ i32 }
-impl_one!{ i64 }
-impl_one!{ i128 }
-impl_one!{ isize }
-impl_one!{ u8 }
-impl_one!{ u16 }
-impl_one!{ u32 }
-impl_one!{ u64 }
-impl_one!{ u128 }
-impl_one!{ usize }
 
 /// `N`-element vector.
 ///
@@ -1726,40 +1630,6 @@ where
     }
 }
 
-/// Constructs a unit matrix.
-impl<T, const N: usize> One for Matrix<T, {N}, {N}>
-where
-    T: Zero + One + Clone,
-    Self: PartialEq<Self> + SquareMatrix<T, {N}>,
-{
-    fn one() -> Self {
-        let mut unit_mat = MaybeUninit::<[Vector<T, {N}>; {N}]>::uninit();
-        let matp: *mut Vector<T, {N}> =
-            unsafe { mem::transmute(&mut unit_mat) };
-        for i in 0..N {
-            let mut unit_vec = MaybeUninit::<Vector<T, {N}>>::uninit();
-            let vecp: *mut T = unsafe { mem::transmute(&mut unit_vec) };
-            for j in 0..i {
-                unsafe {
-                    vecp.add(j).write(<T as Zero>::zero());
-                }
-            }
-            unsafe { vecp.add(i).write(<T as One>::one()); }
-            for j in (i+1)..N {
-                unsafe {
-                    vecp.add(j).write(<T as Zero>::zero());
-                }
-            }
-            unsafe { matp.add(i).write(unit_vec.assume_init()); }
-        }
-        Matrix::<T, {N}, {N}>(unsafe { unit_mat.assume_init() })
-    }
-
-    fn is_one(&self) -> bool {
-        self == &<Self as One>::one()
-    }
-}
-
 impl<T, const N: usize, const M: usize> Index<usize> for Matrix<T, {N}, {M}> {
     type Output = Vector<T, {N}>;
 
@@ -2118,13 +1988,16 @@ where
 
     /// Return the diagonal of the matrix.
     fn diagonal(&self) -> Vector<Scalar, {N}>;
+
+    /// Return the identity matrix of size N.
+    fn identity() -> Matrix<Scalar, {N}, {N}>;
 }
 
 impl<Scalar, const N: usize> SquareMatrix<Scalar, {N}> for Matrix<Scalar, {N}, {N}>
 where
     Scalar: Clone + One,
     Scalar: Add<Scalar, Output = Scalar> + Sub<Scalar, Output = Scalar>,
-    Scalar: Mul<Scalar, Output = Scalar>,
+    Scalar: Mul<Scalar, Output = Scalar> + Zero,
     Self: Add<Self>,
     Self: Sub<Self>,
     Self: Mul<Self>,
@@ -2167,6 +2040,30 @@ where
             }
         }
         Vector::<Scalar, {N}>(unsafe { diag.assume_init() })
+    }
+
+    fn identity() -> Self
+    {
+        let mut unit_mat = MaybeUninit::<[Vector<Scalar, {N}>; {N}]>::uninit();
+        let matp: *mut Vector<Scalar, {N}> =
+            unsafe { mem::transmute(&mut unit_mat) };
+        for i in 0..N {
+            let mut unit_vec = MaybeUninit::<Vector<Scalar, {N}>>::uninit();
+            let vecp: *mut Scalar = unsafe { mem::transmute(&mut unit_vec) };
+            for j in 0..i {
+                unsafe {
+                    vecp.add(j).write(<Scalar as Zero>::zero());
+                }
+            }
+            unsafe { vecp.add(i).write(<Scalar as One>::one()); }
+            for j in (i+1)..N {
+                unsafe {
+                    vecp.add(j).write(<Scalar as Zero>::zero());
+                }
+            }
+            unsafe { matp.add(i).write(unit_vec.assume_init()); }
+        }
+        Matrix::<Scalar, {N}, {N}>(unsafe { unit_mat.assume_init() })
     }
 }
 
@@ -2591,7 +2488,7 @@ mod tests {
             [ 0, 0, 0, 1 ],
         ];
         assert_eq!(
-            Matrix::<u32, 4, 4>::one(),
+            Matrix::<u32, 4, 4>::identity(),
             unit
         );
     }
@@ -2605,7 +2502,7 @@ mod tests {
             [ 0, 0, 0, -1 ],
         ];
         assert_eq!(
-            -Matrix::<i32, 4, 4>::one(),
+            -Matrix::<i32, 4, 4>::identity(),
             neg_unit
         );
     }
