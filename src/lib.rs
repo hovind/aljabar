@@ -495,6 +495,17 @@ impl<T, const N: usize> Vector<T, {N}> {
         }
         unsafe { to.assume_init() }
     }
+
+    /// Constructs the nth unit vector
+    pub fn unit(index: usize) -> Vector<T, {N}>
+    where
+        T: One,
+        Vector<T, {N}>: Zero,
+    {
+        let mut vector = Vector::<T, {N}>::zero();
+        vector[index] = T::one();
+        vector
+    }
     /// Applies the given function to each element of the vector, constructing a
     /// new vector with the returned outputs.
     pub fn map<Out, F>(self, mut f: F) -> Vector<Out, {N}>
