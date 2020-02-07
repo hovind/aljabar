@@ -24,6 +24,7 @@
 #![feature(const_generics)]
 #![feature(trivial_bounds)]
 #![feature(specialization)]
+#![feature(maybe_uninit_ref)]
 
 use std::{
     hash::{
@@ -1402,6 +1403,121 @@ where
 /// ```
 
 #[repr(transparent)]
+struct Triangular<T, const N: usize>([T; {N} * ({N} + 1) / 2]);
+
+#[repr(transparent)]
+pub struct Upper<T, const N: usize>(Triangular<T, {N}>);
+
+#[repr(transparent)]
+pub struct Lower<T, const N: usize>(Triangular<T, {N}>);
+
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+pub struct Permutation<const N: usize>([usize; {N}]);
+
+impl<const N: usize> fmt::Debug for Permutation<{N}>
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[ ")?;
+        for i in 0..N {
+            write!(f, "{:?} ", self.0[i])?;
+        }
+        write!(f, "] ")
+    }
+}
+
+impl<RHS, const N: usize> PartialEq<RHS> for Permutation<{N}>
+where
+    RHS: Deref<Target = [usize; {N}]>,
+{
+    fn eq(&self, other: &RHS) -> bool {
+        for (a, b) in self.0.iter().zip(other.deref().iter()) {
+            if !a.eq(b) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl<const N: usize> Deref for Permutation<{N}> {
+    type Target = [usize; {N}];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize> Permutation<{N}> {
+    pub fn unit() -> Permutation<{N}> {
+        let mut arr = MaybeUninit::<[usize; N]>::uninit();
+        let arr = unsafe {
+            for i in 0..N {
+                *arr.get_mut().index_mut(i) = i;
+            }
+            arr.assume_init()
+        };
+        Permutation(arr)
+    }
+    pub fn swap(&self, i: usize, j: usize) -> Self {
+        let Permutation(mut arr) = self.clone();
+        arr.swap(i, j);
+        Permutation(arr)
+    }
+}
+
+/*fn decompose<T, N>(Matrix<T, {N}>) -> (Lower<T, {N}>, Upper<T, {N}>, Permutation<{N}>) {
+
+int i, j, k, imax;
+    let p = Permutation([]);
+
+    for i in 0..N {
+        p[i] = i; //Unit permutation matrix, P[N] initialized with N
+
+    for (i = 0; i < N; i++) {
+        maxA = 0.0;
+        imax = i;
+
+        for (k = i; k < N; k++)
+            if ((absA = fabs(A[k][i])) > maxA) {
+                maxA = absA;
+                imax = k;
+            }
+
+        if (maxA < Tol) return 0; //failure, matrix is degenerate
+
+        if (imax != i) {
+            //pivoting P
+            j = P[i];
+            P[i] = P[imax];
+            P[imax] = j;
+
+            //pivoting rows of A
+            ptr = A[i];
+            A[i] = A[imax];
+            A[imax] = ptr;
+
+            //counting pivots starting from N (for determinant)
+            P[N]++;
+        }
+
+        for (j = i + 1; j < N; j++) {
+            A[j][i] /= A[i][i];
+
+            for (k = i + 1; k < N; k++)
+                A[j][k] -= A[j][i] * A[i][k];
+        }
+    }
+
+    return 1;  //decomposition done
+
+}
+*/
+
+//fn solve<T, N>(Matrix<T, {N}, {N}>, Vector<T, {N}>) -> Option<Vector<T, {N}>>
+
+
+#[repr(transparent)]
 pub struct Matrix<T, const N: usize, const M: usize>([Vector<T, {N}>; {M}]);
 
 /// A 1-by-1 square matrix.
@@ -2350,6 +2466,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_permutation() {
+        let p1 : Permutation<3> = Permutation::unit();
+        let p2 : Permutation<3> = Permutation([0usize, 1, 2]);
+        assert_eq!(p1, p2);
+    }
 
     #[test]
     fn test_vec_zero() {
