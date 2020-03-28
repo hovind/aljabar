@@ -129,10 +129,6 @@ use serde::{
 /// For example, `vec2(1i32, 2).z()` would fail because `z()` is only available on vectors of
 /// length 3 or greater.
 ///
-/// ```compile_fail
-/// # use aljabar::*;
-/// let z = vec2(1i32, 2).z(); // Fails to compile.
-/// ```
 ///
 /// ### Mixing
 ///
@@ -147,11 +143,6 @@ use serde::{
 /// assert_eq!(ba, vec2(3i32, 4));
 /// ```
 ///
-/// ```compile_fail
-/// # use aljabar::*;
-/// let v = vector!(1i32, 2, 3, 4);
-/// let bad = v.xyrg(); // Compile error, mixes xyzw and rgba names.
-/// ```
 ///
 /// ## Examples
 ///
@@ -572,6 +563,9 @@ impl<T, const N: usize> Vector<T, {N}> {
         }
         unsafe { st.assume_init() }
     }
+    pub fn max_by_key(self) -> usize {
+        let mut i = 0usize;
+        let mut a = T::zero();
 
     /*
     /// Drop the last component and return the vector with one fewer dimension.
@@ -1402,14 +1396,82 @@ where
 /// assert_eq!(m[(1, 1)], 3);
 /// ```
 
-#[repr(transparent)]
+/*#[repr(transparent)]
 struct Triangular<T, const N: usize>([T; {N} * ({N} + 1) / 2]);
+
+impl<T, const N: usize> Zero for Triangular<T, {N}>
+where
+    T: Zero,
+{
+    fn zero() -> Self {
+        let mut arr = MaybeUninit::<[T; N * (N + 1) / 2]>::uninit();
+        let arr = unsafe {
+            for i in 0..N {
+                *arr.get_mut().index_mut(i) = T::zero();
+            }
+            arr.assume_init()
+        };
+        Triangular(arr)
+    }
+
+    fn is_zero(&self) -> bool {
+        for i in 0..N {
+            if !self.0[i].is_zero() {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+
+impl<T, const N: usize> Index<usize> for Triangular<T, {N}> {
+    type Output = T;
+
+    fn index(&self, column: usize) -> &Self::Output {
+        &self.0[column]
+    }
+}
+
+impl<T, const N: usize> Index<(usize, usize)> for Upper<T, {N}> {
+    type Output = T;
+
+    fn index(&self, (row, col): (usize, usize)) -> &Self::Output {
+        &self.0[((N  + 1) * N + (1 - row) * row) / 2 + col]
+    }
+}
 
 #[repr(transparent)]
 pub struct Upper<T, const N: usize>(Triangular<T, {N}>);
 
+impl<T, const N: usize> Zero for Upper<T, {N}>
+where
+    T: Zero,
+{
+    fn zero() -> Self {
+        Upper(Triangular::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
 #[repr(transparent)]
 pub struct Lower<T, const N: usize>(Triangular<T, {N}>);
+
+impl<T, const N: usize> Zero for Lower<T, {N}>
+where
+    T: Zero,
+{
+    fn zero() -> Self {
+        Lower(Triangular::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}*/
 
 #[repr(transparent)]
 #[derive(Copy, Clone)]
@@ -1466,15 +1528,40 @@ impl<const N: usize> Permutation<{N}> {
     }
 }
 
-/*fn decompose<T, N>(Matrix<T, {N}>) -> (Lower<T, {N}>, Upper<T, {N}>, Permutation<{N}>) {
+fn decompose<T, const N: usize>(a: Matrix<T, {N}, {N}>) -> Option<Matrix<T, {N}, {N}>>//Permutation<{N}>
+where
+    T: Zero + One + Mul + PartialOrd + Ord,
+{
+    //let p = Permutation::<{N}>::unit();
+    //let mut l = Lower::<T, {N}>::zero();
+    //let mut u = Upper::<T, {N}>::zero();
+    let mut p = Permutation::<{N}>::unit();
 
+    for i in 1..N {
+        let amax = a[i].into_iter().skip(i).max_by_key(|a| a).unwrap();
+
+        if amax < T::one() { return None; }//failure, matrix is degenerate
+
+        if amax != a[i][i] {
+            //pivoting P
+            p = p.swap(i, imax);
+        }
+
+        for j in i + 1..N {
+            a[j][i] /= a[i][i];
+            for k in i + 1..N {
+                a[j][k] -= a[j][i] * a[i][k];
+            }
+        }
+    }
+
+    Some(a);  //decomposition done
+}
+/*
 int i, j, k, imax;
-    let p = Permutation([]);
+    let p = Permutation::<{N}>::unit()
 
-    for i in 0..N {
-        p[i] = i; //Unit permutation matrix, P[N] initialized with N
-
-    for (i = 0; i < N; i++) {
+    for i in 1..N {
         maxA = 0.0;
         imax = i;
 
