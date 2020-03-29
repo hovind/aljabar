@@ -1597,7 +1597,7 @@ impl<T, const N: usize> Matrix<T, {N}, {N}>
 where
     T: Float,
 {
-    fn decompose(self) -> Option<Decomposition<T, {N}>> {
+    fn decompose(self, tol: T) -> Option<Decomposition<T, {N}>> {
         let mut p = Permutation::<{N}>::unit();
         let mut a = self;
 
@@ -1605,7 +1605,7 @@ where
             let imax = a.transpose()[i].argmax_by_key(Float::abs);
 
             /* Check if matrix is degenerate */
-            if a[(imax, i)] < T::one() { return None; }
+            if a[(imax, i)] < tol { return None; }
 
             /* Pivot rows */
             if imax != p[i] {
@@ -2731,7 +2731,7 @@ mod tests {
             [2.0, 1.0],
             [-1.0f64, 1.0]];
         let b  = vector!(2.0f64, 5.0);
-        let lu = a.decompose().unwrap();
+        let lu = a.decompose(1e-3).unwrap();
 
         assert_eq!(a*lu.solve(b), b);
     }
