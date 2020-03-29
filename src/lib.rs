@@ -563,9 +563,6 @@ impl<T, const N: usize> Vector<T, {N}> {
         }
         unsafe { st.assume_init() }
     }
-    pub fn max_by_key(self) -> usize {
-        let mut i = 0usize;
-        let mut a = T::zero();
 
     /*
     /// Drop the last component and return the vector with one fewer dimension.
@@ -595,6 +592,24 @@ impl<T, const N: usize> Vector<T, {N}> {
         )
     }
      */
+}
+
+impl<T, const N: usize> Vector<T, {N}>
+where
+    T: Clone + Zero + PartialOrd,
+{
+    pub fn argmax_by_key<F: Fn(T) -> T>(self, f : F) -> usize
+    {
+        let mut imax = 0usize;
+        let mut amax = &T::zero();
+        for j in 0..N {
+            if f(self[j].clone()) > *amax {
+                imax = j;
+                amax = &self[j];
+            }
+        }
+        imax
+    }
 }
 
 // @EkardNT: The cool thing about this is that Rust apparently monomorphizes only
@@ -1528,80 +1543,88 @@ impl<const N: usize> Permutation<{N}> {
     }
 }
 
-fn decompose<T, const N: usize>(a: Matrix<T, {N}, {N}>) -> Option<Matrix<T, {N}, {N}>>//Permutation<{N}>
-where
-    T: Zero + One + Mul + PartialOrd + Ord,
+impl<T, const N: usize> Mul<Vector<T, {N}>> for Permutation<{N}> where
+    T: Copy,
 {
-    //let p = Permutation::<{N}>::unit();
-    //let mut l = Lower::<T, {N}>::zero();
-    //let mut u = Upper::<T, {N}>::zero();
-    let mut p = Permutation::<{N}>::unit();
+    type Output = Vector<T, {N}>;
 
-    for i in 1..N {
-        let amax = a[i].into_iter().skip(i).max_by_key(|a| a).unwrap();
+    fn mul(self, rhs: Vector<T, {N}>) -> Self::Output {
+        let mut x = rhs;
+        for i in 0..N {
+            x[i] = x[self[i]];
+        }
+        x
+    }
+}
 
-        if amax < T::one() { return None; }//failure, matrix is degenerate
 
-        if amax != a[i][i] {
-            //pivoting P
-            p = p.swap(i, imax);
+#[derive(Copy, Clone, Debug)]
+pub struct Decomposition<T, const N: usize>(Permutation<{N}>, Matrix<T, {N}, {N}>);
+
+impl<T, const N: usize> Index<(usize,usize)> for Decomposition<T, {N}> {
+    type Output = T;
+
+    fn index(&self, (row, column): (usize, usize)) -> &Self::Output {
+        &self.1[(self.0[row],column)]
+    }
+}
+
+
+impl<T, const N: usize> Decomposition<T, {N}>
+where
+    T: Float,
+{
+    fn solve(self, b: Vector<T, {N}>) -> Vector<T, {N}> {
+        let mut x = self.0 * b;
+        for i in 0..N {
+            for k in 0..i {
+                x[i] = x[i] - self[(i,k)] * x[k];
+            }
         }
 
-        for j in i + 1..N {
-            a[j][i] /= a[i][i];
+        for i in (0..N).rev() {
             for k in i + 1..N {
-                a[j][k] -= a[j][i] * a[i][k];
-            }
-        }
-    }
-
-    Some(a);  //decomposition done
-}
-/*
-int i, j, k, imax;
-    let p = Permutation::<{N}>::unit()
-
-    for i in 1..N {
-        maxA = 0.0;
-        imax = i;
-
-        for (k = i; k < N; k++)
-            if ((absA = fabs(A[k][i])) > maxA) {
-                maxA = absA;
-                imax = k;
+                x[i] = x[i] - self[(i,k)] * x[k];
             }
 
-        if (maxA < Tol) return 0; //failure, matrix is degenerate
-
-        if (imax != i) {
-            //pivoting P
-            j = P[i];
-            P[i] = P[imax];
-            P[imax] = j;
-
-            //pivoting rows of A
-            ptr = A[i];
-            A[i] = A[imax];
-            A[imax] = ptr;
-
-            //counting pivots starting from N (for determinant)
-            P[N]++;
+            x[i] = x[i] / self[(i,i)];
         }
+        x
+    }
+}
 
-        for (j = i + 1; j < N; j++) {
-            A[j][i] /= A[i][i];
+impl<T, const N: usize> Matrix<T, {N}, {N}>
+where
+    T: Float,
+{
+    fn decompose(self) -> Option<Decomposition<T, {N}>> {
+        let mut p = Permutation::<{N}>::unit();
+        let mut a = self;
 
-            for (k = i + 1; k < N; k++)
-                A[j][k] -= A[j][i] * A[i][k];
+        for i in 0..N {
+            let imax = a.transpose()[i].argmax_by_key(Float::abs);
+
+            /* Check if matrix is degenerate */
+            if a[(imax, i)] < T::one() { return None; }
+
+            /* Pivot rows */
+            if imax != p[i] {
+                p = p.swap(i, imax);
+            }
+
+            for j in i + 1..N {
+                a[(p[j],i)] = a[(p[j],i)] / a[(p[i],i)];
+                for k in i + 1..N {
+                    a[(p[j],k)] = a[(p[j],k)] - a[(p[j],i)] * a[(p[i],k)];
+                }
+            }
         }
+        Some(Decomposition(p, a))
     }
 
-    return 1;  //decomposition done
-
 }
-*/
 
-//fn solve<T, N>(Matrix<T, {N}, {N}>, Vector<T, {N}>) -> Option<Vector<T, {N}>>
+
 
 
 #[repr(transparent)]
@@ -2693,6 +2716,22 @@ mod tests {
             Vector::<usize, 10>::from_fn(|i| i),
             indices
         );
+    }
+
+    #[test]
+    fn test_decompose() {
+        /* let unit = matrix![
+            [ 1.0f64, 2.0, 3.0],
+            [ 4.0, 5.0, -6.0],
+            [ 7.0, -8.0, 9.0]]; */
+        let a = matrix![
+            [-1.0f64, 1.0],
+            [2.0, 1.0]];
+        let b  = vector!(2.0f64, 5.0);
+        let lu = a.decompose().unwrap();
+
+        println!("lu = {:?}", lu);
+        assert_eq!(a*lu.solve(b), b);
     }
 
     #[test]
