@@ -1549,9 +1549,9 @@ impl<T, const N: usize> Mul<Vector<T, {N}>> for Permutation<{N}> where
     type Output = Vector<T, {N}>;
 
     fn mul(self, rhs: Vector<T, {N}>) -> Self::Output {
-        let mut x = rhs;
+        let mut x = rhs.clone();
         for i in 0..N {
-            x[i] = x[self[i]];
+            x[i] = rhs[self[i]];
         }
         x
     }
@@ -2579,9 +2579,12 @@ mod tests {
 
     #[test]
     fn test_permutation() {
-        let p1 : Permutation<3> = Permutation::unit();
-        let p2 : Permutation<3> = Permutation([0usize, 1, 2]);
+        let p1 = Permutation::unit();
+        let p2 = Permutation([0usize, 1, 2]);
+        let p3 = Permutation([1usize, 2, 0]);
+        let v = vector!(1.0f64, 2.0, 3.0);
         assert_eq!(p1, p2);
+        assert_eq!(v, p3*(p3*(p3*v)));
     }
 
     #[test]
@@ -2725,12 +2728,11 @@ mod tests {
             [ 4.0, 5.0, -6.0],
             [ 7.0, -8.0, 9.0]]; */
         let a = matrix![
-            [-1.0f64, 1.0],
-            [2.0, 1.0]];
+            [2.0, 1.0],
+            [-1.0f64, 1.0]];
         let b  = vector!(2.0f64, 5.0);
         let lu = a.decompose().unwrap();
 
-        println!("lu = {:?}", lu);
         assert_eq!(a*lu.solve(b), b);
     }
 
