@@ -2208,12 +2208,9 @@ where
 {
     fn determinant(&self) -> Scalar {
         match N {
-            0 => <Scalar>::one(),
+            0 => Scalar::one(),
             1 => self[0][0].clone(),
-            2 => {
-                (self[(0, 0)].clone() * self[(1, 1)].clone()
-                    - self[(1, 0)].clone() * self[(0, 1)].clone())
-            }
+            2 => self[(0, 0)].clone() * self[(1, 1)].clone() - self[(1, 0)].clone() * self[(0, 1)].clone(),
             3 => {
                 let minor1 = self[(1, 1)].clone() * self[(2, 2)].clone()
                     - self[(2, 1)].clone() * self[(1, 2)].clone();
