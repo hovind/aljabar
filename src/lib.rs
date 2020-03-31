@@ -1536,8 +1536,8 @@ impl<const N: usize> Permutation<{N}> {
         };
         Permutation(arr)
     }
-    pub fn swap(&self, i: usize, j: usize) -> Self {
-        let Permutation(mut arr) = self.clone();
+    pub fn swap(self, i: usize, j: usize) -> Self {
+        let Permutation(mut arr) = self;
         arr.swap(i, j);
         Permutation(arr)
     }
