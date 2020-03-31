@@ -2174,29 +2174,25 @@ impl<T, const N: usize, const M: usize> Matrix<T, { N }, { M }> {
 ///
 /// I believe that SquareMatrix should not have parameters, but associated types
 /// and constants do not play well with const generics.
-pub trait SquareMatrix<Scalar, const N: usize>: Sized
-where
-    Scalar: Clone,
-    Self: Add<Self>,
-    Self: Sub<Self>,
-    Self: Mul<Self>,
-    Self: Mul<Vector<Scalar, {N}>, Output = Vector<Scalar, {N}>>,
+pub trait SquareMatrix: Sized
 {
+    type Scalar;
+    type Diagonal;
     /// Returns the [determinant](https://en.wikipedia.org/wiki/Determinant) of
     /// the Matrix.
-    fn determinant(&self) -> Scalar;
+    fn determinant(&self) -> Self::Scalar;
 
     /// Attempt to invert the matrix.
     fn invert(self) -> Option<Self>;
 
     /// Return the diagonal of the matrix.
-    fn diagonal(&self) -> Vector<Scalar, { N }>;
+    fn diagonal(&self) -> Self::Diagonal;
 
     /// Return the identity matrix of size N.
-    fn identity() -> Matrix<Scalar, { N }, { N }>;
+    fn identity() -> Self;
 }
 
-impl<Scalar, const N: usize> SquareMatrix<Scalar, { N }> for Matrix<Scalar, { N }, { N }>
+impl<Scalar, const N: usize> SquareMatrix for Matrix<Scalar, { N }, { N }>
 where
     Scalar: Clone + One,
     Scalar: Add<Scalar, Output = Scalar> + Sub<Scalar, Output = Scalar>,
@@ -2206,11 +2202,16 @@ where
     Self: Mul<Self>,
     Self: Mul<Vector<Scalar, { N }>, Output = Vector<Scalar, { N }>>,
 {
+    type Scalar = Scalar;
+    type Diagonal = Vector<Scalar, { N }>;
     fn determinant(&self) -> Scalar {
         match N {
             0 => Scalar::one(),
             1 => self[0][0].clone(),
-            2 => self[(0, 0)].clone() * self[(1, 1)].clone() - self[(1, 0)].clone() * self[(0, 1)].clone(),
+            2 => {
+                self[(0, 0)].clone() * self[(1, 1)].clone()
+                    - self[(1, 0)].clone() * self[(0, 1)].clone()
+            }
             3 => {
                 let minor1 = self[(1, 1)].clone() * self[(2, 2)].clone()
                     - self[(2, 1)].clone() * self[(1, 2)].clone();
