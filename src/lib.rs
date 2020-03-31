@@ -1605,7 +1605,9 @@ where
             let imax = a.transpose()[i].argmax_by_key(Float::abs);
 
             /* Check if matrix is degenerate */
-            if a[(imax, i)] < tol { return None; }
+            if a[(imax, i)] < tol {
+                return None;
+            }
 
             /* Pivot rows */
             if imax != p[i] {
