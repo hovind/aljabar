@@ -1574,7 +1574,7 @@ impl<T, const N: usize> Decomposition<T, {N}>
 where
     T: Float,
 {
-    fn solve(self, b: Vector<T, {N}>) -> Vector<T, {N}> {
+    pub fn solve(self, b: Vector<T, {N}>) -> Vector<T, {N}> {
         let mut x = self.0 * b;
         for i in 0..N {
             for k in 0..i {
@@ -1597,7 +1597,7 @@ impl<T, const N: usize> Matrix<T, {N}, {N}>
 where
     T: Float,
 {
-    fn decompose(self, tol: T) -> Option<Decomposition<T, {N}>> {
+    pub fn decompose(self, tol: T) -> Option<Decomposition<T, {N}>> {
         let mut p = Permutation::<{N}>::unit();
         let mut a = self;
 
