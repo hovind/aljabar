@@ -602,6 +602,24 @@ impl<T, const N: usize> Vector<T, {N}> {
      */
 }
 
+impl<T, const N: usize> Vector<T, {N}>
+where
+    T: Clone + Zero + PartialOrd,
+{
+    pub fn argmax_by_key<F: Fn(T) -> T>(self, f : F) -> usize
+    {
+        let mut imax = 0usize;
+        let mut amax = &T::zero();
+        for j in 0..N {
+            if f(self[j].clone()) > *amax {
+                imax = j;
+                amax = &self[j];
+            }
+        }
+        imax
+    }
+}
+
 // @EkardNT: The cool thing about this is that Rust apparently monomorphizes only
 // those functions which are actually used. This means that this impl for vectors
 // of any length N is able to support vectors of length N < 4. For example,
