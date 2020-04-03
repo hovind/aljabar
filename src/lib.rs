@@ -24,6 +24,7 @@
 #![feature(const_generics)]
 #![feature(trivial_bounds)]
 #![feature(specialization)]
+#![feature(maybe_uninit_ref)]
 
 use std::{
     hash::{
@@ -1488,6 +1489,78 @@ impl<T, const N: usize> Mul<Vector<T, {N}>> for Permutation<{N}> where
     }
 }
 
+pub trait Decomposition<Scalar, const N: usize>
+{
+    fn solve(self, b: Vector<Scalar, { N }>) -> Vector<Scalar, { N }>;
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct LU<T, const N: usize>(Permutation<{ N }>, Matrix<T, { N }, { N }>);
+
+impl<T, const N: usize> Index<(usize, usize)> for LU<T, { N }> {
+    type Output = T;
+
+    fn index(&self, (row, column): (usize, usize)) -> &Self::Output {
+        &self.1[(self.0[row],column)]
+    }
+}
+
+impl<T, const N: usize> Decomposition<T, {N}> for LU<T, { N }>
+where
+    T: Float,
+{
+    fn solve(self, b: Vector<T, { N }>) -> Vector<T, { N }> {
+        let mut x = self.0 * b;
+        for i in 0..N {
+            for k in 0..i {
+                x[i] = x[i] - self[(i,k)] * x[k];
+            }
+        }
+
+        for i in (0..N).rev() {
+            for k in i + 1..N {
+                x[i] = x[i] - self[(i,k)] * x[k];
+            }
+
+            x[i] = x[i] / self[(i,i)];
+        }
+        x
+    }
+}
+
+impl<T, const N: usize> Matrix<T, {N}, {N}>
+where
+    T: Float,
+{
+    pub fn lu_decompose(self, tol: T) -> Option<LU<T, { N }>> {
+        let mut p = Permutation::<{ N }>::unit();
+        let mut a = self;
+
+        for i in 0..N {
+            let imax = a.transpose()[i].argmax_by_key(Float::abs);
+
+            /* Check if matrix is degenerate */
+            if a[(imax, i)] < tol {
+                return None;
+            }
+
+            /* Pivot rows */
+            if imax != p[i] {
+                p = p.swap(i, imax);
+            }
+
+            for j in i + 1..N {
+                a[(p[j],i)] = a[(p[j],i)] / a[(p[i],i)];
+                for k in i + 1..N {
+                    a[(p[j],k)] = a[(p[j],k)] - a[(p[j],i)] * a[(p[i],k)];
+                }
+            }
+        }
+        Some(LU(p, a))
+    }
+
+}
+
 #[repr(transparent)]
 pub struct Matrix<T, const N: usize, const M: usize>([Vector<T, {N}>; {M}]);
 
@@ -2579,6 +2652,19 @@ mod tests {
             Vector::<usize, 10>::from_fn(|i| i),
             indices
         );
+    }
+
+    #[test]
+    fn test_decompose() {
+        /* let unit = matrix![
+        [ 1.0f64, 2.0, 3.0],
+        [ 4.0, 5.0, -6.0],
+        [ 7.0, -8.0, 9.0]]; */
+        let a = matrix![[2.0, 1.0], [-1.0f64, 1.0]];
+        let b = vector!(2.0f64, 5.0);
+        let lu = a.lu_decompose(1e-3).unwrap();
+
+        assert_eq!(a*lu.solve(b), b);
     }
 
     #[test]
