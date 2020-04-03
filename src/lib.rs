@@ -25,6 +25,10 @@
 #![feature(trivial_bounds)]
 #![feature(specialization)]
 
+extern crate no_std_compat as std;
+
+use std::prelude::v1::*;
+
 use std::{
     fmt,
     hash::{
@@ -79,7 +83,6 @@ use serde::{
     },
 };
 
-use smallvec::SmallVec;
 
 /// Defines the additive identity for `Self`.
 pub trait Zero {
@@ -2579,20 +2582,7 @@ where
         if det.is_zero() {
             return None;
         }
-        // In the future it should be pretty easy to remove these smallvecs. For
-        // now, we use them because we want to avoid a heap allocation.
-        match N {
-            0 | 1 => Matrix::<Scalar, {N}, {N}>::from_iter(
-                SmallVec::from_buf([ <Scalar as One>::one() / det ])
-            ),
-            2 => Matrix::<Scalar, {N}, {N}>::from_iter(
-                SmallVec::from_buf([
-                    self[(1, 1)].clone() / det.clone(), -self[(0, 1)].clone() / det.clone(),
-                    -self[(1, 0)].clone() / det.clone(), self[(0, 0)].clone() / det.clone(),
-                ])
-            ),
-            _ => unimplemented!(),
-        }.into()       
+        unimplemented!()
     }
 
     fn diagonal(&self) -> Vector<Scalar, {N}> {
