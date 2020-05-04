@@ -24,6 +24,7 @@
 #![feature(const_generics)]
 #![feature(trivial_bounds)]
 #![feature(specialization)]
+#![feature(maybe_uninit_ref)]
 
 use core::{
     fmt,
@@ -472,35 +473,100 @@ impl<T, const N: usize> FromIterator<T> for Vector<T, { N }> {
 }
 
 /// Iterator over an array type.
-pub struct ArrayIter<T, const N: usize> {
-    array: MaybeUninit<[T; { N }]>,
-    pos: usize,
+pub struct ArrayIter<'a, T, const N: usize> {
+    array: &'a [T; { N }],
+    pos: Option<usize>,
 }
 
-impl<T, const N: usize> Iterator for ArrayIter<T, { N }> {
-    type Item = T;
+
+impl<'a, T, const N: usize> ArrayIter<'a, T, { N }>
+where
+    T: Clone + PartialOrd + Zero,
+{
+    pub fn max_by_index<F: Fn(T) -> T>(&mut self, f: F) -> Option<usize> {
+        let mut indexed_max: Option<(usize, &T)> = None;
+        while let Some(x) = self.next() {
+            indexed_max = match indexed_max {
+                Some((i, max)) if f(x.clone()) > *max => Some((i, max)),
+                otherwise => otherwise,
+            }
+        }
+        indexed_max.map(|(i, _)| i)
+    }
+}
+
+impl<'a, T, const N: usize> Iterator for ArrayIter<'a, T, { N }> {
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos == N {
-            None
-        } else {
-            let pos = self.pos;
-            self.pos += 1;
-            let arrayp: *mut MaybeUninit<T> = unsafe { mem::transmute(&mut self.array) };
-            Some(unsafe { arrayp.add(pos).replace(MaybeUninit::uninit()).assume_init() })
+        match self.pos {
+            None if N > 0 => {
+                self.pos = Some(0);
+                Some(&self.array[0])
+            }
+            Some(i) if i + 1 < N => {
+                let j = i + 1;
+                self.pos = Some(j);
+                Some(&self.array[j])
+            }
+            _ => None,
         }
     }
 }
 
-impl<T, const N: usize> IntoIterator for Vector<T, { N }> {
-    type Item = T;
-    type IntoIter = ArrayIter<T, { N }>;
+impl<'a, T, const N: usize> IntoIterator for &'a Vector<T, { N }> {
+    type Item = &'a T;
+    type IntoIter = ArrayIter<'a, T, { N }>;
 
     fn into_iter(self) -> Self::IntoIter {
         let Vector(array) = self;
         ArrayIter {
-            array: MaybeUninit::new(array),
-            pos: 0,
+            array: array,
+            pos: None,
+        }
+    }
+}
+
+/// Iterator over an array type.
+pub struct ArrayIterOwned<T, const N: usize> {
+    array: [T; { N }],
+    pos: Option<usize>,
+}
+
+impl<T, const N: usize> Iterator for ArrayIterOwned<T, { N }>
+where
+    T: Clone,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.pos {
+            None if N > 0 => {
+                self.pos = Some(0);
+                Some(self.array[0].clone())
+            }
+            Some(i) if i + 1 < N => {
+                let j = i + 1;
+                self.pos = Some(j);
+                Some(self.array[j].clone())
+            }
+            _ => None,
+        }
+    }
+}
+
+impl<T, const N: usize> IntoIterator for Vector<T, { N }>
+where
+    T: Clone,
+{
+    type Item = T;
+    type IntoIter = ArrayIterOwned<T, { N }>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let Vector(array) = self;
+        ArrayIterOwned {
+            array: array,
+            pos: None,
         }
     }
 }
@@ -1435,15 +1501,15 @@ where
     }
 }
 
-impl<T, const N: usize> IntoIterator for Point<T, { N }> {
-    type Item = T;
-    type IntoIter = ArrayIter<T, { N }>;
+impl<'a, T, const N: usize> IntoIterator for &'a Point<T, { N }> {
+    type Item = &'a T;
+    type IntoIter = ArrayIter<'a, T, { N }>;
 
     fn into_iter(self) -> Self::IntoIter {
         let Point(array) = self;
         ArrayIter {
-            array: MaybeUninit::new(array),
-            pos: 0,
+            array: array,
+            pos: None,
         }
     }
 }
@@ -1673,6 +1739,140 @@ where
 /// assert_eq!(m[(0, 1)], 2);
 /// assert_eq!(m[(1, 1)], 3);
 /// ```
+
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+pub struct Permutation<const N: usize>([usize; { N }]);
+
+impl<const N: usize> fmt::Debug for Permutation<{ N }> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[ ")?;
+        for i in 0..N {
+            write!(f, "{:?} ", self.0[i])?;
+        }
+        write!(f, "] ")
+    }
+}
+
+impl<RHS, const N: usize> PartialEq<RHS> for Permutation<{ N }>
+where
+    RHS: Deref<Target = [usize; { N }]>,
+{
+    fn eq(&self, other: &RHS) -> bool {
+        for (a, b) in self.0.iter().zip(other.deref().iter()) {
+            if !a.eq(b) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl<const N: usize> Deref for Permutation<{ N }> {
+    type Target = [usize; { N }];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize> Permutation<{ N }> {
+    pub fn unit() -> Permutation<{ N }> {
+        let mut arr = MaybeUninit::<[usize; N]>::uninit();
+        let arr = unsafe {
+            for i in 0..N {
+                *arr.get_mut().index_mut(i) = i;
+            }
+            arr.assume_init()
+        };
+        Permutation(arr)
+    }
+    pub fn swap(self, i: usize, j: usize) -> Self {
+        let Permutation(mut arr) = self;
+        arr.swap(i, j);
+        Permutation(arr)
+    }
+}
+
+impl<T, const N: usize> Mul<Vector<T, { N }>> for Permutation<{ N }>
+where
+    T: Copy,
+{
+    type Output = Vector<T, { N }>;
+
+    fn mul(self, rhs: Vector<T, { N }>) -> Self::Output {
+        let mut x = rhs.clone();
+        for i in 0..N {
+            x[i] = rhs[self[i]];
+        }
+        x
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Decomposition<T, const N: usize>(Permutation<{ N }>, Matrix<T, { N }, { N }>);
+
+impl<T, const N: usize> Index<(usize, usize)> for Decomposition<T, { N }> {
+    type Output = T;
+
+    fn index(&self, (row, column): (usize, usize)) -> &Self::Output {
+        &self.1[(self.0[row], column)]
+    }
+}
+
+impl<T, const N: usize> Decomposition<T, { N }>
+where
+    T: Copy + Sub<T, Output = T> + Mul<T, Output = T> + Div<T, Output = T>,
+{
+    pub fn solve(self, b: Vector<T, { N }>) -> Vector<T, { N }> {
+        let mut x = self.0 * b;
+        for i in 0..N {
+            for k in 0..i {
+                x[i] = x[i] - self[(i, k)] * x[k];
+            }
+        }
+
+        for i in (0..N).rev() {
+            for k in i + 1..N {
+                x[i] = x[i] - self[(i, k)] * x[k];
+            }
+
+            x[i] = x[i] / self[(i, i)];
+        }
+        x
+    }
+}
+
+impl<T, const N: usize> Matrix<T, { N }, { N }>
+where
+    T: Copy + PartialOrd + Zero + Sub<T, Output = T> + Mul<T, Output = T> + Div<T, Output = T>,
+{
+    pub fn decompose(self, tol: T) -> Option<Decomposition<T, { N }>> {
+        let mut p = Permutation::<{ N }>::unit();
+        let mut a = self;
+
+        for i in 0..N {
+            if let Some(imax) = (&a.transpose()[i]).into_iter().max_by_index(|x| x * x) {
+                /* Check if matrix is degenerate */
+                if a[(imax, i)] < tol {
+                    return None;
+                }
+
+                /* Pivot rows */
+                if imax != p[i] {
+                    p = p.swap(i, imax);
+                }
+            }
+            for j in i + 1..N {
+                a[(p[j], i)] = a[(p[j], i)] / a[(p[i], i)];
+                for k in i + 1..N {
+                    a[(p[j], k)] = a[(p[j], k)] - a[(p[j], i)] * a[(p[i], k)];
+                }
+            }
+        }
+        Some(Decomposition(p, a))
+    }
+}
 
 #[repr(transparent)]
 pub struct Matrix<T, const N: usize, const M: usize>([Vector<T, { N }>; { M }]);
@@ -1919,15 +2119,15 @@ impl<T, const N: usize, const M: usize> FromIterator<Vector<T, { N }>> for Matri
     }
 }
 
-impl<T, const N: usize, const M: usize> IntoIterator for Matrix<T, { N }, { M }> {
-    type Item = Vector<T, { N }>;
-    type IntoIter = ArrayIter<Vector<T, { N }>, { M }>;
+impl<'a, T, const N: usize, const M: usize> IntoIterator for &'a Matrix<T, { N }, { M }> {
+    type Item = &'a Vector<T, { N }>;
+    type IntoIter = ArrayIter<'a, Vector<T, { N }>, { M }>;
 
     fn into_iter(self) -> Self::IntoIter {
         let Matrix(array) = self;
         ArrayIter {
-            array: MaybeUninit::new(array),
-            pos: 0,
+            array: array,
+            pos: None,
         }
     }
 }
@@ -2487,8 +2687,6 @@ where
     Self: Mul<Self>,
     Self: Mul<Vector<Scalar, { N }>, Output = Vector<Scalar, { N }>>,
 {
-    N}>, Output = Vector<Scalar, {N}>>,
-{
     /// Returns the [determinant](https://en.wikipedia.org/wiki/Determinant) of
     /// the Matrix.
     fn determinant(&self) -> Scalar;
@@ -2515,7 +2713,10 @@ where
         match N {
             0 => Scalar::one(),
             1 => self[0][0].clone(),
-            2 => self[(0, 0)].clone() * self[(1, 1)].clone() - self[(1, 0)].clone() * self[(0, 1)].clone(),
+            2 => {
+                self[(0, 0)].clone() * self[(1, 1)].clone()
+                    - self[(1, 0)].clone() * self[(0, 1)].clone()
+            }
             3 => {
                 let minor1 = self[(1, 1)].clone() * self[(2, 2)].clone()
                     - self[(2, 1)].clone() * self[(1, 2)].clone();
@@ -2926,6 +3127,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_permutation() {
+        let p1 = Permutation::unit();
+        let p2 = Permutation([0usize, 1, 2]);
+        let p3 = Permutation([1usize, 2, 0]);
+        let v = vector!(1.0f64, 2.0, 3.0);
+        assert_eq!(p1, p2);
+        assert_eq!(v, p3 * (p3 * (p3 * v)));
+    }
+
+    #[test]
     fn test_vec_zero() {
         let a = Vector3::<u32>::zero();
         assert_eq!(a, Vector3::<u32>::from([0, 0, 0]));
@@ -3043,6 +3254,19 @@ mod tests {
     }
 
     #[test]
+    fn test_decompose() {
+        /* let unit = matrix![
+        [ 1.0f64, 2.0, 3.0],
+        [ 4.0, 5.0, -6.0],
+        [ 7.0, -8.0, 9.0]]; */
+        let a = matrix![[2.0, 1.0], [-1.0f64, 1.0]];
+        let b = vector!(2.0f64, 5.0);
+        let lu = a.decompose(1e-3).unwrap();
+
+        assert_eq!(a * lu.solve(b), b);
+    }
+
+    #[test]
     fn test_vec_map() {
         let int = vector!(1i32, 0, 1, 1, 0, 1, 1, 0, 0, 0);
         let boolean = vector!(true, false, true, true, false, true, true, false, false, false);
@@ -3059,7 +3283,7 @@ mod tests {
     #[test]
     fn test_vec_into_iter() {
         let v = vector!(1i32, 2, 3, 4);
-        let vec: Vec<_> = v.into_iter().collect();
+        let vec: Vec<i32> = v.into_iter().collect();
         assert_eq!(vec, vec![1i32, 2, 3, 4])
     }
 
