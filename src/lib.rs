@@ -1847,31 +1847,6 @@ impl<T, const N: usize> Matrix<T, { N }, { N }>
 where
     T: Copy + PartialOrd + Zero + Sub<T, Output = T> + Mul<T, Output = T> + Div<T, Output = T>,
 {
-    pub fn decompose(self, tol: T) -> Option<Decomposition<T, { N }>> {
-        let mut p = Permutation::<{ N }>::unit();
-        let mut a = self;
-
-        for i in 0..N {
-            if let Some(imax) = (&a.transpose()[i]).into_iter().max_by_index(|x| x * x) {
-                /* Check if matrix is degenerate */
-                if a[(imax, i)] < tol {
-                    return None;
-                }
-
-                /* Pivot rows */
-                if imax != p[i] {
-                    p = p.swap(i, imax);
-                }
-            }
-            for j in i + 1..N {
-                a[(p[j], i)] = a[(p[j], i)] / a[(p[i], i)];
-                for k in i + 1..N {
-                    a[(p[j], k)] = a[(p[j], k)] - a[(p[j], i)] * a[(p[i], k)];
-                }
-            }
-        }
-        Some(Decomposition(p, a))
-    }
 }
 
 #[repr(transparent)]
@@ -2671,36 +2646,9 @@ impl<T, const N: usize, const M: usize> Matrix<T, { N }, { M }> {
     }
 }
 
-/// Defines a matrix with an equal number of elements in either dimension.
-///
-/// Square matrices can be added, subtracted, and multiplied indiscriminately
-/// together. This is a type constraint; only Matrices that are square are able
-/// to be multiplied by matrices of the same size.
-///
-/// I believe that SquareMatrix should not have parameters, but associated types
-/// and constants do not play well with const generics.
-pub trait SquareMatrix<Scalar, const N: usize>: Sized
+impl<Scalar, const N: usize> Matrix<Scalar, { N }, { N }>
 where
-    Scalar: Clone,
-    Self: Add<Self>,
-    Self: Sub<Self>,
-    Self: Mul<Self>,
-    Self: Mul<Vector<Scalar, { N }>, Output = Vector<Scalar, { N }>>,
-{
-    /// Returns the [determinant](https://en.wikipedia.org/wiki/Determinant) of
-    /// the Matrix.
-    fn determinant(&self) -> Scalar;
-
-    /// Attempt to invert the matrix.
-    fn invert(self) -> Option<Self>;
-
-    /// Return the diagonal of the matrix.
-    fn diagonal(&self) -> Vector<Scalar, { N }>;
-}
-
-impl<Scalar, const N: usize> SquareMatrix<Scalar, { N }> for Matrix<Scalar, { N }, { N }>
-where
-    Scalar: Clone + One + Zero,
+    Scalar: Copy + PartialOrd + One + Zero,
     Scalar: Neg<Output = Scalar>,
     Scalar: Add<Scalar, Output = Scalar> + Sub<Scalar, Output = Scalar>,
     Scalar: Mul<Scalar, Output = Scalar> + Div<Scalar, Output = Scalar>,
@@ -2709,7 +2657,32 @@ where
     Self: Mul<Self>,
     Self: Mul<Vector<Scalar, { N }>, Output = Vector<Scalar, { N }>>,
 {
-    fn determinant(&self) -> Scalar {
+    pub fn decompose(self, tol: Scalar) -> Option<Decomposition<Scalar, { N }>> {
+        let mut p = Permutation::<{ N }>::unit();
+        let mut a = self;
+
+        for i in 0..N {
+            if let Some(imax) = (&a.transpose()[i]).into_iter().max_by_index(|x| x * x) {
+                /* Check if matrix is degenerate */
+                if a[(imax, i)] < tol {
+                    return None;
+                }
+
+                /* Pivot rows */
+                if imax != p[i] {
+                    p = p.swap(i, imax);
+                }
+            }
+            for j in i + 1..N {
+                a[(p[j], i)] = a[(p[j], i)] / a[(p[i], i)];
+                for k in i + 1..N {
+                    a[(p[j], k)] = a[(p[j], k)] - a[(p[j], i)] * a[(p[i], k)];
+                }
+            }
+        }
+        Some(Decomposition(p, a))
+    }
+    pub fn determinant(&self) -> Scalar {
         match N {
             0 => Scalar::one(),
             1 => self[0][0].clone(),
@@ -2731,7 +2704,7 @@ where
         }
     }
 
-    fn invert(self) -> Option<Self> {
+    pub fn invert(self) -> Option<Self> {
         let det = self.determinant();
         if det.is_zero() {
             return None;
@@ -2753,7 +2726,7 @@ where
         .into()
     }
 
-    fn diagonal(&self) -> Vector<Scalar, { N }> {
+    pub fn diagonal(&self) -> Vector<Scalar, { N }> {
         let mut diag = MaybeUninit::<[Scalar; { N }]>::uninit();
         let diagp: *mut Scalar = unsafe { mem::transmute(&mut diag) };
         for i in 0..N {
