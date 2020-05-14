@@ -27,6 +27,7 @@
 #![feature(maybe_uninit_ref)]
 
 use core::{
+    cmp::{Ordering, PartialOrd},
     fmt,
     hash::{Hash, Hasher},
     iter::FromIterator,
@@ -35,6 +36,7 @@ use core::{
         Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
         SubAssign,
     },
+    slice::Iter,
 };
 
 #[cfg(feature = "serde")]
@@ -472,58 +474,12 @@ impl<T, const N: usize> FromIterator<T> for Vector<T, { N }> {
     }
 }
 
-/// Iterator over an array type.
-pub struct ArrayIter<'a, T, const N: usize> {
-    array: &'a [T; { N }],
-    pos: Option<usize>,
-}
-
-
-impl<'a, T, const N: usize> ArrayIter<'a, T, { N }>
-where
-    T: Clone + PartialOrd + Zero,
-{
-    pub fn max_by_index<F: Fn(T) -> T>(&mut self, f: F) -> Option<usize> {
-        let mut indexed_max: Option<(usize, &T)> = None;
-        while let Some(x) = self.next() {
-            indexed_max = match indexed_max {
-                Some((i, max)) if f(x.clone()) > *max => Some((i, max)),
-                otherwise => otherwise,
-            }
-        }
-        indexed_max.map(|(i, _)| i)
-    }
-}
-
-impl<'a, T, const N: usize> Iterator for ArrayIter<'a, T, { N }> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.pos {
-            None if N > 0 => {
-                self.pos = Some(0);
-                Some(&self.array[0])
-            }
-            Some(i) if i + 1 < N => {
-                let j = i + 1;
-                self.pos = Some(j);
-                Some(&self.array[j])
-            }
-            _ => None,
-        }
-    }
-}
-
 impl<'a, T, const N: usize> IntoIterator for &'a Vector<T, { N }> {
     type Item = &'a T;
-    type IntoIter = ArrayIter<'a, T, { N }>;
+    type IntoIter = Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let Vector(array) = self;
-        ArrayIter {
-            array: array,
-            pos: None,
-        }
+        self.0.into_iter()
     }
 }
 
@@ -1503,14 +1459,10 @@ where
 
 impl<'a, T, const N: usize> IntoIterator for &'a Point<T, { N }> {
     type Item = &'a T;
-    type IntoIter = ArrayIter<'a, T, { N }>;
+    type IntoIter = Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let Point(array) = self;
-        ArrayIter {
-            array: array,
-            pos: None,
-        }
+        self.0.into_iter()
     }
 }
 
@@ -1843,9 +1795,8 @@ where
     }
 }
 
-impl<T, const N: usize> Matrix<T, { N }, { N }>
-where
-    T: Copy + PartialOrd + Zero + Sub<T, Output = T> + Mul<T, Output = T> + Div<T, Output = T>,
+impl<T, const N: usize> Matrix<T, { N }, { N }> where
+    T: Copy + PartialOrd + Zero + Sub<T, Output = T> + Mul<T, Output = T> + Div<T, Output = T>
 {
 }
 
@@ -1886,6 +1837,86 @@ impl<T, const N: usize, const M: usize> From<[[T; { N }]; { M }]> for Matrix<T, 
             }
         }
         Matrix::<T, { N }, { M }>(unsafe { vec_array.assume_init() })
+    }
+}
+
+pub struct RowView<'a, T, const N: usize, const M: usize> {
+    row: usize,
+    matrix: &'a Matrix<T, { N }, { M }>,
+}
+
+impl<'a, T, const N: usize, const M: usize> Index<usize> for RowView<'a, T, { N }, { M }> {
+    type Output = T;
+
+    fn index(&self, column: usize) -> &Self::Output {
+        &self.matrix[column][self.row]
+    }
+}
+
+impl<'a, T, const N: usize, const M: usize> IntoIterator for RowView<'a, T, { N }, { M }> {
+    type Item = &'a T;
+    type IntoIter = ColIter<'a, T, { N }, { M }>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ColIter {
+            col: 0,
+            row: self.row,
+            matrix: self.matrix,
+        }
+    }
+}
+
+pub struct RowIter<'a, T, const N: usize, const M: usize> {
+    row: usize,
+    matrix: &'a Matrix<T, { N }, { M }>,
+}
+
+impl<'a, T, const N: usize, const M: usize> Iterator for RowIter<'a, T, { N }, { M }> {
+    type Item = RowView<'a, T, { N }, { M }>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let row = if self.row < N {
+            Some(RowView {
+                row: self.row,
+                matrix: self.matrix,
+            })
+        } else {
+            None
+        };
+        self.row += 1;
+        row
+    }
+}
+
+pub struct ColIter<'a, T, const N: usize, const M: usize> {
+    col: usize,
+    row: usize,
+    matrix: &'a Matrix<T, { N }, { M }>,
+}
+
+impl<'a, T, const N: usize, const M: usize> Iterator for ColIter<'a, T, { N }, { M }> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let element = if self.col < M {
+            Some(&self.matrix[self.col][self.row])
+        } else {
+            None
+        };
+        self.col += 1;
+        element
+    }
+}
+
+impl<T, const N: usize, const M: usize> Matrix<T, { N }, { M }> {
+    fn column_iter<'a>(&'a self) -> Iter<'a, Vector<T, { N }>> {
+        self.0.iter()
+    }
+    fn row_iter<'a>(&'a self) -> RowIter<'a, T, { N }, { M }> {
+        RowIter {
+            row: 0,
+            matrix: self,
+        }
     }
 }
 
@@ -2096,14 +2127,10 @@ impl<T, const N: usize, const M: usize> FromIterator<Vector<T, { N }>> for Matri
 
 impl<'a, T, const N: usize, const M: usize> IntoIterator for &'a Matrix<T, { N }, { M }> {
     type Item = &'a Vector<T, { N }>;
-    type IntoIter = ArrayIter<'a, Vector<T, { N }>, { M }>;
+    type IntoIter = Iter<'a, Vector<T, { N }>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let Matrix(array) = self;
-        ArrayIter {
-            array: array,
-            pos: None,
-        }
+        self.0.into_iter()
     }
 }
 
@@ -2659,12 +2686,16 @@ where
 {
     pub fn decompose(self, tol: Scalar) -> Option<Decomposition<Scalar, { N }>> {
         let mut p = Permutation::<{ N }>::unit();
-        let mut a = self;
+        let mut a = self.clone();
 
-        for i in 0..N {
-            if let Some(imax) = (&a.transpose()[i]).into_iter().max_by_index(|x| x * x) {
+        for (i, row) in self.row_iter().enumerate() {
+            if let Some((imax, &value)) = row
+                .into_iter()
+                .enumerate()
+                .max_by(|(_, &x), (_, &y)| (x * x).partial_cmp(&(y * y)).unwrap_or(Ordering::Less))
+            {
                 /* Check if matrix is degenerate */
-                if a[(imax, i)] < tol {
+                if value < tol {
                     return None;
                 }
 
