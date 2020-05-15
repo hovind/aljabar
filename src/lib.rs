@@ -479,7 +479,7 @@ impl<'a, T, const N: usize> IntoIterator for &'a Vector<T, { N }> {
     type IntoIter = Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.0.iter()
     }
 }
 
@@ -1462,7 +1462,7 @@ impl<'a, T, const N: usize> IntoIterator for &'a Point<T, { N }> {
     type IntoIter = Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.0.iter()
     }
 }
 
@@ -2130,7 +2130,7 @@ impl<'a, T, const N: usize, const M: usize> IntoIterator for &'a Matrix<T, { N }
     type IntoIter = Iter<'a, Vector<T, { N }>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.0.iter()
     }
 }
 
