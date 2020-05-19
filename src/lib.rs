@@ -30,7 +30,7 @@ use core::{
     cmp::{Ordering, PartialOrd},
     fmt,
     hash::{Hash, Hasher},
-    iter::FromIterator,
+    iter::{FromIterator, Product},
     mem::{self, MaybeUninit},
     ops::{
         Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub,
@@ -57,8 +57,6 @@ use serde::{
     ser::SerializeTuple,
     Deserialize, Deserializer, Serialize, Serializer,
 };
-
-use smallvec::SmallVec;
 
 /// Defines the additive identity for `Self`.
 pub trait Zero {
@@ -175,6 +173,8 @@ where
     fn mul2(self) -> Self;
 
     fn div2(self) -> Self;
+
+    const MIN_POSITIVE: Self;
 }
 
 impl Real for f32 {
@@ -189,6 +189,8 @@ impl Real for f32 {
     fn div2(self) -> Self {
         self / 2.0
     }
+
+    const MIN_POSITIVE: Self = f32::MIN_POSITIVE;
 }
 
 impl Real for f64 {
@@ -203,6 +205,8 @@ impl Real for f64 {
     fn div2(self) -> Self {
         self / 2.0
     }
+
+    const MIN_POSITIVE: Self = f64::MIN_POSITIVE;
 }
 
 /// `N`-element vector.
@@ -1761,6 +1765,23 @@ where
     }
 }
 
+impl<T, const N: usize, const M: usize> Mul<Matrix<T, { N }, { M }>> for Permutation<{ N }>
+where
+    T: Copy,
+{
+    type Output = Matrix<T, { N }, { M }>;
+
+    fn mul(self, rhs: Matrix<T, { N }, { M }>) -> Self::Output {
+        let mut a = rhs.clone();
+        for i in 0..N {
+            for j in 0..N {
+                a[(i, j)] = rhs[(self[i], j)];
+            }
+        }
+        a
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Decomposition<T, const N: usize>(Permutation<{ N }>, Matrix<T, { N }, { N }>);
 
@@ -1774,7 +1795,7 @@ impl<T, const N: usize> Index<(usize, usize)> for Decomposition<T, { N }> {
 
 impl<T, const N: usize> Decomposition<T, { N }>
 where
-    T: Copy + Sub<T, Output = T> + Mul<T, Output = T> + Div<T, Output = T>,
+    T: Copy + PartialEq + One + Zero + Product + Sub<T, Output = T> + Mul<T, Output = T> + Div<T, Output = T>,
 {
     pub fn solve(self, b: Vector<T, { N }>) -> Vector<T, { N }> {
         let mut x = self.0 * b;
@@ -1792,6 +1813,28 @@ where
             x[i] = x[i] / self[(i, i)];
         }
         x
+    }
+    fn determinant(&self) -> T {
+        self.1.diagonal().into_iter().product()
+    }
+    fn invert(&self) -> Matrix<T, { N }, { N }> {
+        let mut a = self.0 * Matrix::<T, { N }, { N }>::one();
+        for j in 0..N {
+            for i in 0..N {
+                for k in 0..i {
+                    a[(i, j)] = a[(i, j)] - self[(i, k)] * a[(k, j)];
+                }
+            }
+
+            for i in (0..N).rev() {
+                for k in i + 1..N {
+                    a[(i, j)] = a[(i, j)] - self[(i, k)] * a[(k, j)];
+                }
+
+                a[(i, j)] = a[(i, j)] / self[(i, i)];
+            }
+        }
+        a
     }
 }
 
@@ -2675,7 +2718,7 @@ impl<T, const N: usize, const M: usize> Matrix<T, { N }, { M }> {
 
 impl<Scalar, const N: usize> Matrix<Scalar, { N }, { N }>
 where
-    Scalar: Copy + PartialOrd + One + Zero,
+    Scalar: Copy + PartialOrd + One + Zero + Real + Product,
     Scalar: Neg<Output = Scalar>,
     Scalar: Add<Scalar, Output = Scalar> + Sub<Scalar, Output = Scalar>,
     Scalar: Mul<Scalar, Output = Scalar> + Div<Scalar, Output = Scalar>,
@@ -2714,58 +2757,26 @@ where
         Some(Decomposition(p, a))
     }
     pub fn determinant(&self) -> Scalar {
-        match N {
-            0 => Scalar::one(),
-            1 => self[0][0].clone(),
-            2 => {
-                self[(0, 0)].clone() * self[(1, 1)].clone()
-                    - self[(1, 0)].clone() * self[(0, 1)].clone()
-            }
-            3 => {
-                let minor1 = self[(1, 1)].clone() * self[(2, 2)].clone()
-                    - self[(2, 1)].clone() * self[(1, 2)].clone();
-                let minor2 = self[(1, 0)].clone() * self[(2, 2)].clone()
-                    - self[(2, 0)].clone() * self[(1, 2)].clone();
-                let minor3 = self[(1, 0)].clone() * self[(2, 1)].clone()
-                    - self[(2, 0)].clone() * self[(1, 1)].clone();
-                self[(0, 0)].clone() * minor1 - self[(0, 1)].clone() * minor2
-                    + self[(0, 2)].clone() * minor3
-            }
-            _ => unimplemented!(),
-        }
+        self.decompose(Scalar::MIN_POSITIVE)
+            .map_or(Scalar::zero(), |x| x.determinant())
     }
 
     pub fn invert(self) -> Option<Self> {
-        let det = self.determinant();
-        if det.is_zero() {
-            return None;
-        }
-        // In the future it should be pretty easy to remove these smallvecs. For
-        // now, we use them because we want to avoid a heap allocation.
-        match N {
-            0 | 1 => Matrix::<Scalar, { N }, { N }>::from_iter(SmallVec::from_buf([
-                <Scalar as One>::one() / det,
-            ])),
-            2 => Matrix::<Scalar, { N }, { N }>::from_iter(SmallVec::from_buf([
-                self[(1, 1)].clone() / det.clone(),
-                -self[(0, 1)].clone() / det.clone(),
-                -self[(1, 0)].clone() / det.clone(),
-                self[(0, 0)].clone() / det.clone(),
-            ])),
-            _ => unimplemented!(),
-        }
-        .into()
+        self.decompose(Scalar::MIN_POSITIVE).map(|x| x.invert())
     }
+}
 
+impl<Scalar, const N: usize> Matrix<Scalar, { N }, { N }>
+where
+    Scalar: Copy,
+{
     pub fn diagonal(&self) -> Vector<Scalar, { N }> {
-        let mut diag = MaybeUninit::<[Scalar; { N }]>::uninit();
-        let diagp: *mut Scalar = unsafe { mem::transmute(&mut diag) };
+        let mut to = MaybeUninit::<Vector<Scalar, { N }>>::uninit();
+        let top: *mut Scalar = unsafe { mem::transmute(&mut to) };
         for i in 0..N {
-            unsafe {
-                diagp.add(i).write(self.0[i].0[i].clone());
-            }
+            unsafe { top.add(i).write(self[(i, i)]) }
         }
-        Vector::<Scalar, { N }>(unsafe { diag.assume_init() })
+        unsafe { to.assume_init() }
     }
 }
 
