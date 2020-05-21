@@ -1818,23 +1818,7 @@ where
         self.1.diagonal().into_iter().product()
     }
     fn invert(&self) -> Matrix<T, { N }, { N }> {
-        let mut a = self.0 * Matrix::<T, { N }, { N }>::one();
-        for j in 0..N {
-            for i in 0..N {
-                for k in 0..i {
-                    a[(i, j)] = a[(i, j)] - self[(i, k)] * a[(k, j)];
-                }
-            }
-
-            for i in (0..N).rev() {
-                for k in i + 1..N {
-                    a[(i, j)] = a[(i, j)] - self[(i, k)] * a[(k, j)];
-                }
-
-                a[(i, j)] = a[(i, j)] / self[(i, i)];
-            }
-        }
-        a
+        Matrix::<T, { N }, { N }>::one().column_iter().map(|col| self.solve(*col)).collect()
     }
 }
 
@@ -3491,7 +3475,7 @@ mod tests {
         let a: Mat2x2<f64> = matrix![[1.0f64, 2.0f64], [3.0f64, 4.0f64],];
         assert_eq!(
             a.invert().unwrap(),
-            matrix![[-2.0f64, 1.5f64], [1.0f64, -0.5f64]]
+            matrix![[-2.0f64, 1.0f64], [1.5f64, -0.5f64]]
         );
         assert!(matrix![[0.0f64, 2.0f64], [0.0f64, 5.0f64]]
             .invert()
@@ -3577,14 +3561,14 @@ mod tests {
         let rot = Orthonormal::<f32, 3>::from(Euler {
             x: 0.0,
             y: 0.0,
-            z: std::f32::consts::FRAC_PI_2,
+            z: core::f32::consts::FRAC_PI_2,
         });
         assert_eq!(rot.rotate_vector(vector![1.0f32, 0.0, 0.0]).y(), 1.0);
         let v = vector![1.0f32, 0.0, 0.0];
         let q1 = Quaternion::from(Euler {
             x: 0.0,
             y: 0.0,
-            z: std::f32::consts::FRAC_PI_2,
+            z: core::f32::consts::FRAC_PI_2,
         });
         assert_eq!(q1.rotate_vector(v).normalize().y(), 1.0);
     }
