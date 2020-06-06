@@ -1041,13 +1041,13 @@ mod tests {
 
         let a: Matrix2<f64> = matrix![[1.0f64, 2.0f64], [3.0f64, 4.0f64],];
         let identity: Matrix2<f64> = Matrix2::<f64>::one();
-        abs_diff_eq!(
+        assert_abs_diff_eq!(
             a.invert().unwrap(),
             matrix![[-2.0f64, 1.0f64], [1.5f64, -0.5f64]]
         );
 
-        abs_diff_eq!(a.invert().unwrap() * a, identity);
-        abs_diff_eq!(a * a.invert().unwrap(), identity);
+        assert_abs_diff_eq!(a.invert().unwrap() * a, identity);
+        assert_abs_diff_eq!(a * a.invert().unwrap(), identity);
         assert!(matrix![[0.0f64, 2.0f64], [0.0f64, 5.0f64]]
             .invert()
             .is_none());
