@@ -1166,6 +1166,13 @@ mod tests {
         });
         assert_eq!(q1.rotate_vector(v).normalize().y(), 1.0);
     }
+
+    #[quickcheck]
+    fn lu_decomposition(a: Matrix<f64, 2, 2>, b: Vector<f64, 2>) -> bool {
+        a.lu().map_or(a.determinant().is_zero(), |lu| {
+            (a * lu.solve(b)).ulps_eq(&b, f64::default_epsilon(), 65536u32)
+        })
+    }
 }
 
 #[cfg(all(feature = "mint", test))]
