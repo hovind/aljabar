@@ -829,7 +829,7 @@ mod tests {
         let b = vector!(5.0f64, 2.0);
         let lu = a.lu().unwrap();
 
-        assert_eq!(a * lu.solve(b), b);
+        assert_abs_diff_eq!(a * lu.solve(b), b);
     }
 
     #[test]
