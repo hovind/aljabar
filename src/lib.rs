@@ -551,6 +551,8 @@ mod tests {
         assert_abs_diff_eq, AbsDiffEq, RelativeEq, UlpsEq,
     };
 
+    type Vector1<T> = Vector<T, 1>;
+
     impl<T: AbsDiffEq, const N: usize> AbsDiffEq for Vector<T, { N }>
     where
         T::Epsilon: Copy,
@@ -585,7 +587,6 @@ mod tests {
         }
     }
 
-    type Vector1<T> = Vector<T, 1>;
     impl<T: RelativeEq, const N: usize> RelativeEq for Vector<T, { N }>
     where
         T::Epsilon: Copy,
