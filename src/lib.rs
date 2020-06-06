@@ -547,7 +547,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::{abs_diff_eq, AbsDiffEq};
+    use approx::{
+        assert_abs_diff_eq, AbsDiffEq, RelativeEq, UlpsEq,
+    };
 
     impl<T: AbsDiffEq, const N: usize> AbsDiffEq for Vector<T, { N }>
     where
@@ -584,6 +586,65 @@ mod tests {
     }
 
     type Vector1<T> = Vector<T, 1>;
+    impl<T: RelativeEq, const N: usize> RelativeEq for Vector<T, { N }>
+    where
+        T::Epsilon: Copy,
+    {
+        fn default_max_relative() -> T::Epsilon {
+            T::default_max_relative()
+        }
+
+        fn relative_eq(&self, other: &Self, epsilon: T::Epsilon, max_relative: T::Epsilon) -> bool {
+            self.iter()
+                .zip(other.iter())
+                .all(|(x, y)| T::relative_eq(x, y, epsilon, max_relative))
+        }
+    }
+
+    impl<T: RelativeEq, const N: usize, const M: usize> RelativeEq for Matrix<T, { N }, { M }>
+    where
+        T::Epsilon: Copy,
+    {
+        fn default_max_relative() -> T::Epsilon {
+            T::default_max_relative()
+        }
+
+        fn relative_eq(&self, other: &Self, epsilon: T::Epsilon, max_relative: T::Epsilon) -> bool {
+            self.column_iter()
+                .zip(other.column_iter())
+                .all(|(x, y)| Vector::<T, { N }>::relative_eq(x, y, epsilon, max_relative))
+        }
+    }
+
+    impl<T: UlpsEq, const N: usize> UlpsEq for Vector<T, { N }>
+    where
+        T::Epsilon: Copy,
+    {
+        fn default_max_ulps() -> u32 {
+            T::default_max_ulps()
+        }
+
+        fn ulps_eq(&self, other: &Self, epsilon: T::Epsilon, max_ulps: u32) -> bool {
+            self.iter()
+                .zip(other.iter())
+                .all(|(x, y)| T::ulps_eq(x, y, epsilon, max_ulps))
+        }
+    }
+
+    impl<T: UlpsEq, const N: usize, const M: usize> UlpsEq for Matrix<T, { N }, { M }>
+    where
+        T::Epsilon: Copy,
+    {
+        fn default_max_ulps() -> u32 {
+            T::default_max_ulps()
+        }
+
+        fn ulps_eq(&self, other: &Self, epsilon: T::Epsilon, max_ulps: u32) -> bool {
+            self.column_iter()
+                .zip(other.column_iter())
+                .all(|(x, y)| Vector::<T, { N }>::ulps_eq(x, y, epsilon, max_ulps))
+        }
+    }
 
     /*
     #[test]
