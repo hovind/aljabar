@@ -654,7 +654,6 @@ mod tests {
         }
     }
 
-
     impl<T, const N: usize> Arbitrary for Vector<T, { N }>
     where
         T: Arbitrary,
