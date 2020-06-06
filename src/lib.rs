@@ -174,6 +174,12 @@
 #![feature(trivial_bounds)]
 #![feature(maybe_uninit_ref)]
 
+#[cfg(test)]
+extern crate quickcheck;
+#[cfg(test)]
+#[macro_use(quickcheck)]
+extern crate quickcheck_macros;
+
 use core::{
     cmp::PartialOrd,
     fmt,
@@ -550,6 +556,7 @@ mod tests {
     use approx::{
         assert_abs_diff_eq, AbsDiffEq, RelativeEq, UlpsEq,
     };
+    use quickcheck::{Arbitrary, Gen};
 
     type Vector1<T> = Vector<T, 1>;
 
@@ -644,6 +651,35 @@ mod tests {
             self.column_iter()
                 .zip(other.column_iter())
                 .all(|(x, y)| Vector::<T, { N }>::ulps_eq(x, y, epsilon, max_ulps))
+        }
+    }
+
+
+    impl<T, const N: usize> Arbitrary for Vector<T, { N }>
+    where
+        T: Arbitrary,
+    {
+        fn arbitrary<G: Gen>(g: &mut G) -> Self {
+            let mut to = MaybeUninit::<Vector<T, { N }>>::uninit();
+            let top: *mut T = unsafe { mem::transmute(&mut to) };
+            for i in 0..N {
+                unsafe { top.add(i).write(T::arbitrary(g)) }
+            }
+            unsafe { to.assume_init() }
+        }
+    }
+
+    impl<T, const N: usize, const M: usize> Arbitrary for Matrix<T, { N }, { M }>
+    where
+        T: Arbitrary,
+    {
+        fn arbitrary<G: Gen>(g: &mut G) -> Self {
+            let mut to = MaybeUninit::<Matrix<T, { N }, { M }>>::uninit();
+            let top: *mut Vector<T, { N }> = unsafe { mem::transmute(&mut to) };
+            for i in 0..N {
+                unsafe { top.add(i).write(Vector::<T, { N }>::arbitrary(g)) }
+            }
+            unsafe { to.assume_init() }
         }
     }
 
