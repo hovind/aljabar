@@ -160,7 +160,7 @@ impl<T, const N: usize> Vector<T, { N }> {
         }
         unsafe { st.assume_init() }
     }
-
+    /*
     /// Removes the last component and returns the vector with one fewer
     /// dimension.
     ///
@@ -214,7 +214,7 @@ impl<T, const N: usize> Vector<T, { N }> {
             headp.add(N).write(new);
             head.assume_init()
         }
-    }
+    } */
 }
 
 /// A `Vector` with one fewer dimension than `N`.
